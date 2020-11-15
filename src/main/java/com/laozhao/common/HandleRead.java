@@ -13,29 +13,31 @@ public class HandleRead {
 
     private static volatile boolean shouldGoon=true;
 
+    private static boolean init =false;
+
     public  static void handleRead(SelectionKey key) {
         SocketChannel socketChannel = (SocketChannel) key.channel();
         ByteBuffer byteBuffer =ByteBuffer.allocate(1024);
         startWork();
         try {
-        while (shouldGoon) {
             int length = socketChannel.read(byteBuffer);
-            if (length<=0){
-                continue;
+            if (length>0) {
+                byte[] b = new byte[length];
+                System.out.println("add length :" + length);
+                byteBuffer.get(b);
+                String infos = new String(b);
+                System.out.println(infos);
+                queue.add(b);
             }
-            byte[] b = new byte[length];
-            System.out.println("add length :"+length);
-            byteBuffer.get(b);
-            String infos=new String(b);
-            System.out.println(infos);
-            queue.add(b);
-            byteBuffer.compact();
+        if(!shouldGoon){
+            byte[] b=CommonUtil.endByte();
+            ByteBuffer buf=ByteBuffer.allocate(b.length);
+            buf.put(b);
+            buf.flip();
+            socketChannel.register(key.selector(), SelectionKey.OP_WRITE);
+        }else {
+            key.channel().register(key.selector(),SelectionKey.OP_READ);
         }
-        byte[] b=CommonUtil.endByte();
-        ByteBuffer buf=ByteBuffer.allocate(b.length);
-        buf.put(b);
-        buf.flip();
-        key=socketChannel.register(key.selector(), SelectionKey.OP_WRITE);
         } catch (Exception e) {
                 e.printStackTrace();
         }
@@ -43,8 +45,11 @@ public class HandleRead {
     }
 
     private static void startWork() {
+        if (init){
+            return;
+        }
+        init=true;
         new Thread(new Runnable() {
-            @Override
             public void run() {
             final ByteBuffer byteBuffer =ByteBuffer.allocate(1024);
             while (shouldGoon) {
