@@ -12,13 +12,13 @@ import java.util.Set;
 public class ChatServer {
     public static void main(String[] args) {
         Selector selector=null;
-        ServerSocketChannel socketChannel=null;
+        ServerSocketChannel serverSocketChannel=null;
         try {
          selector=Selector.open();
-         socketChannel=ServerSocketChannel.open();
-         socketChannel.socket().bind(new InetSocketAddress(9990));
-         socketChannel.configureBlocking(false);
-         socketChannel.register(selector, SelectionKey.OP_ACCEPT);
+         serverSocketChannel=ServerSocketChannel.open();
+         serverSocketChannel.socket().bind(new InetSocketAddress(19999));
+         serverSocketChannel.configureBlocking(false);
+         serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
          while(true){
             if(selector.select(500)==0){
                 continue;
@@ -29,6 +29,9 @@ public class ChatServer {
                 if(!key.isValid()){
                     System.out.println(System.nanoTime()+"   close");
                 }
+                /**
+                 *  第一次触发的是 isAcceptable 而且这个时候一定是 ServerSocketChannel
+                 */
                 if(key.isAcceptable()){
                     System.out.println("isAcceptable");
                     handleAccept(key);
@@ -54,16 +57,17 @@ public class ChatServer {
     private static void handleWrite(SelectionKey key) {
         SocketChannel socketChannel= (SocketChannel) key.channel();
         ByteBuffer byteBuffer= (ByteBuffer) key.attachment();
-        if(byteBuffer==null){
-            byteBuffer=ByteBuffer.allocate(1024);
-            byteBuffer.put(CommonUtil.getByte("asd华盛顿"));
-            byteBuffer.flip();
-        }else {
+        if(byteBuffer!=null){
             System.out.println("not null");
+            String str=CommonUtil.decode(byteBuffer);
+            System.out.println(str);
         }
-
+        byteBuffer=ByteBuffer.allocate(1024);
+        byteBuffer.put(CommonUtil.endByte());
+        byteBuffer.flip();
         while (byteBuffer.hasRemaining()){
             try {
+                System.out.println("send back");
                 socketChannel.write(byteBuffer);
             } catch (IOException e) {
                 e.printStackTrace();
@@ -74,42 +78,80 @@ public class ChatServer {
 
     private static void handleRead(SelectionKey key) {
         SocketChannel socketChannel = (SocketChannel) key.channel();
-        ByteBuffer  or= (ByteBuffer) key.attachment();
-        System.out.println("or:"+CommonUtil.decode(or));
         ByteBuffer byteBuffer =ByteBuffer.allocate(1024);
         try {
             int length;
-            while(true) {
-                length=socketChannel.read(byteBuffer);
-                if(length==0){
-                  //  System.out.println("continue");
-                     continue;
-                }
-                if(length==-1){
-                    System.out.println("channel have close go out");
-                    break;
-                }
-                String str=CommonUtil.decode(byteBuffer);
-                System.out.println("receive length :"+length+" info:"+str);
-                if(str!=null) {
-                    String end = str.substring(str.length() - 3);
-                    System.out.println("end:" + end);
+            boolean goon=true;
+            /** 读取头部整数后 有没有将后续的字符串一并读出来 没有就是false**/
+            boolean currentDeal=true;
+            int infoLength=0;
+            while (goon) {
+                length = socketChannel.read(byteBuffer);
+                Thread.sleep(1*1000);
+                System.out.println(CommonUtil.decode(byteBuffer));
+                //从socket填充完毕 转为读取状态
 
-                    if (end.equalsIgnoreCase(CommonUtil.END)) {
-                        System.out.println(" receive over go out");
-                        break;
+               System.out.println("length:"+length+" currentDeal:"+currentDeal);
+               byteBuffer.flip();
+
+                if(!currentDeal&&infoLength>0){
+                    if(byteBuffer.remaining()>infoLength) {
+                        byte[] info = new byte[infoLength];
+                        byteBuffer.get(info);
+                        System.out.println("unDeal:" + new String(info));
+                        currentDeal = true;
+                    }else {
+                        System.out.println("!currentDeal&&infoLength>0 continue");
+                        continue;
                     }
                 }
 
-                byteBuffer.clear();
-                byteBuffer.put(CommonUtil.getByte("q"));
+                // 1. 首先读取头部整数
+                if (byteBuffer.remaining() >= 4) {
+                    infoLength = byteBuffer.getInt();
+                    currentDeal=false;
+                } else {
+                    System.out.println("首先读取头部整数 position:"+byteBuffer.position()+" limit:"+byteBuffer.limit());
+                    Thread.sleep(1*1000);
+                    continue;
+
+                }
+                System.out.println("infoLength:" + infoLength);
+
+                //2. 进入循环 每次验证剩余的是否够一个包 不够则进行读取
+                while (byteBuffer.remaining() >= infoLength) {
+                    byte[] info = new byte[infoLength];
+                    byteBuffer.get(info);
+                    String infoStr = new String(info);
+                    System.out.println(infoStr);
+                    //  标记处理完毕
+                    currentDeal=true;
+                     // 判断是否发送过来结束符
+                    if (infoStr.equalsIgnoreCase(CommonUtil.END)) {
+                        System.out.println(" receive over go out");
+                        goon=false;
+                        break;
+                    }
+                    if (byteBuffer.remaining() >= 4) {
+                        infoLength = byteBuffer.getInt();
+                        // 标记未处理完毕 进入下一轮循环
+                        currentDeal=false;
+                    } else {
+                        System.out.println("break");
+                        break;
+                    }
+                }
+                // 将没有读取的部分 压到头部 继续进行填充
+                byteBuffer.compact();
             }
+
+
             byte[] b=CommonUtil.endByte();
             ByteBuffer buf=ByteBuffer.allocate(b.length);
             buf.put(b);
             buf.flip();
             key=socketChannel.register(key.selector(), SelectionKey.OP_WRITE);
-            key.attach(buf);
+
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -125,9 +167,9 @@ public class ChatServer {
             if(sc!=null){
                 sc.configureBlocking(false);
                 sc.register(key.selector(),SelectionKey.OP_READ, ByteBuffer.allocate(1024));
-                byte[] m="a lo ha==".getBytes();
+               /* byte[] m="a lo ha==".getBytes();
                 ByteBuffer buf=ByteBuffer.allocate(m.length);
-                sc.write(buf);
+                sc.write(buf);*/
             }
         } catch (IOException e) {
             e.printStackTrace();

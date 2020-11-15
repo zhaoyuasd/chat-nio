@@ -17,22 +17,22 @@ import java.util.Set;
 public class ChatClient {
     public static void main(String[] args) {
         ByteBuffer buffer=ByteBuffer.allocate(1024);
-        SocketChannel socketChannel=null;
+        SocketChannel clientSocketChannel=null;
         Selector selector=null;
         try{
-            selector=Selector.open();
-           socketChannel=SocketChannel.open();
-           socketChannel.configureBlocking(false);
-           socketChannel.connect(new InetSocketAddress("localhost",9990));
-            while (!socketChannel.finishConnect()){
+           selector=Selector.open();
+           clientSocketChannel=SocketChannel.open();
+           clientSocketChannel.configureBlocking(false);
+           clientSocketChannel.connect(new InetSocketAddress("localhost",19999));
+            while (!clientSocketChannel.finishConnect()){
 
             }
-            System.out.println(socketChannel.isConnected());
-            if(socketChannel.isConnected()){
+            System.out.println(clientSocketChannel.isConnected());
+            if(clientSocketChannel.isConnected()){
                 System.out.println(" write data ");
-                doWrite(socketChannel);
+                doWrite(clientSocketChannel);
             }
-            socketChannel.register(selector,SelectionKey.OP_READ);
+            clientSocketChannel.register(selector,SelectionKey.OP_READ);
             StringBuffer sb=new StringBuffer();
             System.out.println("等待回复结果");
             boolean goon=true;
@@ -68,18 +68,21 @@ public class ChatClient {
         byte[] m;
         try {
 
-            for(int i=1;i<100;i++){
+            for(int i=1;i<6;i++){
                 String info="hello this just my test for learn new io haha hello word";
                 info=i+":"+info;
                 m = CommonUtil.getByte(info);
-                ByteBuffer buf=ByteBuffer.allocate(m.length);
+                ByteBuffer buf=ByteBuffer.allocate(m.length+4);
+               /***整数  + 字符串字节数  ***/
+                buf.putInt(m.length);
                 buf.put(m);
                 buf.flip();
                 System.out.println("send time :"+i);
                 socketChannel.write(buf);
             }
             byte[] b=CommonUtil.endByte();
-            ByteBuffer bb=ByteBuffer.allocate(b.length);
+            ByteBuffer bb=ByteBuffer.allocate(b.length+4);
+            bb.putInt(b.length);
             bb.put(b);
             bb.flip();
             socketChannel.write(bb);
